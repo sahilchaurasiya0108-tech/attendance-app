@@ -11,6 +11,7 @@ import AdminEmployees from './pages/admin/Employees';
 import AdminAttendance from './pages/admin/Attendance';
 import AdminReports from './pages/admin/Reports';
 import WFHRequests from './pages/admin/WFHRequests';
+import AdminEmployeeAttendance from './pages/admin/EmployeeAttendance';
 import LoadingScreen from './components/common/LoadingScreen';
 
 const PrivateRoute = ({ children, adminOnly = false, employeeOnly = false }) => {
@@ -45,6 +46,7 @@ export default function App() {
       <Route path="/admin" element={<PrivateRoute adminOnly><AdminLayout /></PrivateRoute>}>
         <Route index element={<AdminDashboard />} />
         <Route path="employees" element={<AdminEmployees />} />
+        <Route path="employees/:id/attendance" element={<AdminEmployeeAttendance />} />
         <Route path="attendance" element={<AdminAttendance />} />
         <Route path="reports" element={<AdminReports />} />
         <Route path="wfh-requests" element={<WFHRequests />} />

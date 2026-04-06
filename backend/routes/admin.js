@@ -10,6 +10,7 @@ const {
   getAttendanceRecords,
   getMonthlyReport,
   exportCSV,
+  getEmployeeAttendance,
 } = require('../controllers/adminController');
 const { protect, adminOnly } = require('../middleware/auth');
 const { validateCreateEmployee } = require('../middleware/validation');
@@ -22,6 +23,7 @@ router.post('/employees', validateCreateEmployee, createEmployee);
 router.put('/employees/:id', updateEmployee);
 router.patch('/employees/:id/toggle', toggleEmployeeStatus);
 router.delete('/employees/:id', deleteEmployee);
+router.get('/employees/:id/attendance', getEmployeeAttendance);  // NEW
 router.get('/attendance', getAttendanceRecords);
 router.get('/attendance/export', exportCSV);
 router.get('/reports/monthly', getMonthlyReport);

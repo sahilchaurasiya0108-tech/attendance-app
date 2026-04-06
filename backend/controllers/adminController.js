@@ -105,6 +105,30 @@ const toggleEmployeeStatus = asyncHandler(async (req, res) => {
   res.json({ success: true, message: `User ${user.isActive ? 'activated' : 'deactivated'}`, user });
 });
 
+// @desc    Get attendance records for a specific employee (admin view)
+// @route   GET /api/admin/employees/:id/attendance
+// @access  Admin
+const getEmployeeAttendance = asyncHandler(async (req, res) => {
+  const { month, year } = req.query;
+  const currentDate = new Date();
+  const targetMonth = parseInt(month) || currentDate.getMonth() + 1;
+  const targetYear  = parseInt(year)  || currentDate.getFullYear();
+
+  const lastDay   = getLastDay(targetMonth, targetYear);
+  const startDate = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
+  const endDate   = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  const user = await User.findById(req.params.id).lean();
+  if (!user) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+  const records = await Attendance.find({
+    userId: req.params.id,
+    date: { $gte: startDate, $lte: endDate },
+  }).sort({ date: 1 }).lean();
+
+  res.json({ success: true, user, records });
+});
+
 // @desc    Get all attendance records (admin)
 // @route   GET /api/admin/attendance
 // @access  Admin
@@ -210,23 +234,23 @@ const exportCSV = asyncHandler(async (req, res) => {
 
   // ── Palette ───────────────────────────────────────────────────────────────
   const COLOR = {
-    headerBg:   '1E293B', // slate-800
+    headerBg:   '1E293B',
     headerFg:   'FFFFFF',
-    titleBg:    '6366F1', // indigo-500
+    titleBg:    '6366F1',
     titleFg:    'FFFFFF',
-    present:    'D1FAE5', // emerald-100
-    presentText:'065F46', // emerald-800
-    late:       'FEF3C7', // amber-100
-    lateText:   '92400E', // amber-800
-    absent:     'FEE2E2', // red-100
-    absentText: '991B1B', // red-800
-    rowEven:    'F8FAFC', // slate-50
+    present:    'D1FAE5',
+    presentText:'065F46',
+    late:       'FEF3C7',
+    lateText:   '92400E',
+    absent:     'FEE2E2',
+    absentText: '991B1B',
+    rowEven:    'F8FAFC',
     rowOdd:     'FFFFFF',
-    border:     'CBD5E1', // slate-300
-    subHeader:  'E2E8F0', // slate-200
+    border:     'CBD5E1',
+    subHeader:  'E2E8F0',
     subHeaderTx:'1E293B',
-    summaryBg:  'EEF2FF', // indigo-50
-    summaryVal: '4338CA', // indigo-700
+    summaryBg:  'EEF2FF',
+    summaryVal: '4338CA',
   };
 
   const border = (color = COLOR.border) => ({
@@ -236,15 +260,11 @@ const exportCSV = asyncHandler(async (req, res) => {
     right:  { style: 'thin', color: { argb: color } },
   });
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // SHEET 1 — Attendance Log
-  // ══════════════════════════════════════════════════════════════════════════
   const logSheet = workbook.addWorksheet('Attendance Log', {
     pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
 
-  // Column widths
   logSheet.columns = [
     { key: 'name',       width: 24 },
     { key: 'email',      width: 30 },
@@ -257,7 +277,6 @@ const exportCSV = asyncHandler(async (req, res) => {
     { key: 'autoLogout', width: 13 },
   ];
 
-  // Row 1 — Big title
   logSheet.mergeCells('A1:I1');
   const titleCell = logSheet.getCell('A1');
   titleCell.value = `📋  Attendance Report — ${monthName} ${targetYear}`;
@@ -266,7 +285,6 @@ const exportCSV = asyncHandler(async (req, res) => {
   titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
   logSheet.getRow(1).height = 36;
 
-  // Row 2 — Generated timestamp
   logSheet.mergeCells('A2:I2');
   const genCell = logSheet.getCell('A2');
   genCell.value = `Generated on ${new Date().toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short' })}   |   Total Records: ${records.length}`;
@@ -275,10 +293,8 @@ const exportCSV = asyncHandler(async (req, res) => {
   genCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
   logSheet.getRow(2).height = 20;
 
-  // Row 3 — blank spacer
   logSheet.getRow(3).height = 6;
 
-  // Row 4 — Column headers
   const headers = ['Employee Name', 'Email', 'Department', 'Date', 'Status', 'Check In', 'Check Out', 'Work Hours', 'Auto Logout'];
   const headerRow = logSheet.getRow(4);
   headers.forEach((h, i) => {
@@ -291,7 +307,6 @@ const exportCSV = asyncHandler(async (req, res) => {
   });
   headerRow.height = 28;
 
-  // Data rows
   records.forEach((r, idx) => {
     const rowNum = idx + 5;
     const row = logSheet.getRow(rowNum);
@@ -313,7 +328,6 @@ const exportCSV = asyncHandler(async (req, res) => {
       r.autoCheckout ? 'Yes' : 'No',
     ];
 
-    // Status-based row tinting
     let rowBg = isEven ? COLOR.rowEven : COLOR.rowOdd;
     let statusBg = rowBg;
     let statusFg = '1E293B';
@@ -333,12 +347,8 @@ const exportCSV = asyncHandler(async (req, res) => {
     row.height = 22;
   });
 
-  // Auto-filter on header row
   logSheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 9 } };
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // SHEET 2 — Employee Summary
-  // ══════════════════════════════════════════════════════════════════════════
   const sumSheet = workbook.addWorksheet('Employee Summary', {
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
@@ -354,7 +364,6 @@ const exportCSV = asyncHandler(async (req, res) => {
     { key: 'pct',     width: 14 },
   ];
 
-  // Count elapsed working days (Mon–Sat) up to today if current month, else full month
   const todayDate = new Date();
   const isCurrentMonth = todayDate.getFullYear() === targetYear && todayDate.getMonth() + 1 === targetMonth;
   const countUpToDay = isCurrentMonth ? todayDate.getDate() : lastDay;
@@ -364,16 +373,13 @@ const exportCSV = asyncHandler(async (req, res) => {
     if (new Date(targetYear, targetMonth - 1, d).getDay() !== 0) workingDays++;
   }
 
-  // Fetch ALL active employees so new employees with zero attendance still appear
   const allEmployees = await User.find({ role: 'employee', isActive: true }).lean();
 
-  // Seed empMap with every employee (present/late/hours all zero by default)
   const empMap = {};
   for (const emp of allEmployees) {
     empMap[emp._id.toString()] = { name: emp.name, dept: emp.department, present: 0, late: 0, hours: 0 };
   }
 
-  // Layer in attendance data
   for (const r of records) {
     if (!r.userId) continue;
     const uid = r.userId._id.toString();
@@ -384,7 +390,6 @@ const exportCSV = asyncHandler(async (req, res) => {
   }
   const empRows = Object.values(empMap).sort((a, b) => a.name.localeCompare(b.name));
 
-  // Title
   sumSheet.mergeCells('A1:H1');
   const sTitleCell = sumSheet.getCell('A1');
   sTitleCell.value = `👥  Employee Summary — ${monthName} ${targetYear}`;
@@ -403,7 +408,6 @@ const exportCSV = asyncHandler(async (req, res) => {
 
   sumSheet.getRow(3).height = 6;
 
-  // Headers
   const sHeaders = ['Employee Name', 'Department', 'Present', 'Late', 'Absent', 'Total Days', 'Total Hours', 'Attendance %'];
   const sHeaderRow = sumSheet.getRow(4);
   sHeaders.forEach((h, i) => {
@@ -426,7 +430,6 @@ const exportCSV = asyncHandler(async (req, res) => {
     const pct = workingDays > 0 ? Math.round((total / workingDays) * 100) : 0;
     const hStr = `${Math.floor(e.hours)}h ${Math.round((e.hours % 1) * 60)}m`;
 
-    // Color-code attendance %
     let pctBg = rowBg;
     let pctFg = '334155';
     if (pct >= 90) { pctBg = COLOR.present; pctFg = COLOR.presentText; }
@@ -446,7 +449,6 @@ const exportCSV = asyncHandler(async (req, res) => {
     row.height = 22;
   });
 
-  // Totals row
   if (empRows.length > 0) {
     const totRow = sumSheet.getRow(empRows.length + 5);
     const totValues = [
@@ -472,7 +474,6 @@ const exportCSV = asyncHandler(async (req, res) => {
 
   sumSheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 8 } };
 
-  // ── Send response ─────────────────────────────────────────────────────────
   const filename = `attendance-${targetYear}-${String(targetMonth).padStart(2, '0')}.xlsx`;
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -488,12 +489,12 @@ const deleteEmployee = asyncHandler(async (req, res) => {
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
   if (user.role === 'admin') return res.status(403).json({ success: false, message: 'Cannot delete an admin account' });
   await User.findByIdAndDelete(req.params.id);
-  // Also remove their attendance records
   await Attendance.deleteMany({ userId: req.params.id });
   res.json({ success: true, message: `${user.name} deleted successfully` });
 });
 
 module.exports = {
   getDashboard, getEmployees, createEmployee, updateEmployee,
-  toggleEmployeeStatus, deleteEmployee, getAttendanceRecords, getMonthlyReport, exportCSV,
+  toggleEmployeeStatus, deleteEmployee, getAttendanceRecords,
+  getMonthlyReport, exportCSV, getEmployeeAttendance,
 };
