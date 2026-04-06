@@ -1,0 +1,270 @@
+const Attendance = require('../models/Attendance');
+const { isWithinOffice } = require('../services/locationService');
+const { getAttendanceStatus, getTodayDate } = require('../services/attendanceService');
+const { asyncHandler } = require('../middleware/errorHandler');
+const { checkWFHPermission, incrementWFHDaysUsed } = require('./wfhController');
+const { sendPushToUser } = require('../services/pushService');
+
+// @desc    Check in
+// @route   POST /api/attendance/checkin
+// @access  Private
+const checkIn = asyncHandler(async (req, res) => {
+  const { latitude, longitude } = req.body;
+  const today = getTodayDate();
+
+  const existing = await Attendance.findOne({ userId: req.user._id, date: today });
+  if (existing && existing.checkInTime) {
+    return res.status(400).json({ success: false, message: 'You have already checked in today' });
+  }
+
+  const locationCheck = isWithinOffice(parseFloat(latitude), parseFloat(longitude));
+  let isWFH = false;
+  let wfhPermission = null;
+
+  if (!locationCheck.isValid) {
+    const wfhCheck = await checkWFHPermission(req.user._id, parseFloat(latitude), parseFloat(longitude));
+    if (!wfhCheck.allowed) {
+      return res.status(400).json({
+        success: false,
+        outsideOffice: true,
+        message: `You are outside office location. You are ${locationCheck.distance}m away (allowed: ${locationCheck.allowedRadius}m). Request WFH permission if working from home.`,
+      });
+    }
+    isWFH = true;
+    wfhPermission = wfhCheck.permission;
+  }
+
+  const now = new Date();
+  const status = getAttendanceStatus(now);
+
+  let attendance;
+  if (existing) {
+    existing.checkInTime = now;
+    existing.status = status;
+    existing.latitude = latitude;
+    existing.longitude = longitude;
+    existing.notes = isWFH ? 'Work From Home' : '';
+    attendance = await existing.save();
+  } else {
+    attendance = await Attendance.create({
+      userId: req.user._id,
+      date: today,
+      checkInTime: now,
+      status,
+      latitude,
+      longitude,
+      notes: isWFH ? 'Work From Home' : '',
+    });
+  }
+
+  if (isWFH && wfhPermission) {
+    await incrementWFHDaysUsed(wfhPermission._id);
+  }
+
+  // Send push notification to employee's device(s)
+  sendPushToUser(req.user._id, {
+    title: status === 'late' ? '⏰ Checked In — Late' : '✅ Checked In — On Time',
+    body: status === 'late'
+      ? `You're marked late today${isWFH ? ' (WFH)' : ''}. Give it your best!`
+      : `Good morning! Checked in successfully${isWFH ? ' (WFH)' : ''}. Have a great day!`,
+    tag: 'checkin',
+    url: '/dashboard',
+  }).catch(() => {});
+
+  res.status(201).json({
+    success: true,
+    message: `Checked in successfully! Status: ${status}${isWFH ? ' (WFH)' : ''}`,
+    attendance,
+  });
+});
+
+// @desc    Check out
+// @route   POST /api/attendance/checkout
+// @access  Private
+const checkOut = asyncHandler(async (req, res) => {
+  const { latitude, longitude } = req.body;
+  const today = getTodayDate();
+
+  const attendance = await Attendance.findOne({ userId: req.user._id, date: today });
+
+  if (!attendance || !attendance.checkInTime) {
+    return res.status(400).json({ success: false, message: 'You have not checked in today' });
+  }
+
+  if (attendance.checkOutTime) {
+    return res.status(400).json({ success: false, message: 'You have already checked out today' });
+  }
+
+  const locationCheck = isWithinOffice(parseFloat(latitude), parseFloat(longitude));
+  if (!locationCheck.isValid) {
+    // If the employee checked in as WFH today, allow checkout from the same WFH location
+    // without re-checking remaining days (days were already counted on check-in)
+    const isCheckedInAsWFH = attendance.notes === 'Work From Home';
+    if (!isCheckedInAsWFH) {
+      // Not a WFH day — verify live WFH permission as normal
+      const wfhCheck = await checkWFHPermission(req.user._id, parseFloat(latitude), parseFloat(longitude));
+      if (!wfhCheck.allowed) {
+        return res.status(400).json({
+          success: false,
+          outsideOffice: true,
+          message: `You are outside office location. You are ${locationCheck.distance}m away (allowed: ${locationCheck.allowedRadius}m).`,
+        });
+      }
+    }
+    // else: WFH check-in already validated — allow checkout freely from same home location
+  }
+
+  const checkOutTime = new Date();
+  attendance.checkOutTime = checkOutTime;
+  attendance.checkOutLatitude = latitude;
+  attendance.checkOutLongitude = longitude;
+
+  const diffMs = checkOutTime - new Date(attendance.checkInTime);
+  attendance.workHours = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+
+  await attendance.save();
+
+  // Send push notification to employee's device(s)
+  sendPushToUser(req.user._id, {
+    title: '🏁 Day Complete!',
+    body: `You worked ${Math.floor(attendance.workHours)}h ${Math.round((attendance.workHours % 1) * 60)}m today. Great job!`,
+    tag: 'checkout',
+    url: '/dashboard',
+  }).catch(() => {});
+
+  res.json({
+    success: true,
+    message: 'Checked out successfully!',
+    attendance,
+  });
+});
+
+// @desc    Get today's attendance
+// @route   GET /api/attendance/today
+// @access  Private
+const getTodayAttendance = asyncHandler(async (req, res) => {
+  const today = getTodayDate();
+  const attendance = await Attendance.findOne({ userId: req.user._id, date: today });
+  res.json({ success: true, attendance: attendance || null });
+});
+
+// @desc    Get attendance history
+// @route   GET /api/attendance/history
+// @access  Private
+const getHistory = asyncHandler(async (req, res) => {
+  const { month, year, page = 1, limit = 31 } = req.query;
+  const DATA_START = '2026-04-01';
+
+  let query = { userId: req.user._id };
+
+  if (month && year) {
+    const m = parseInt(month);
+    const y = parseInt(year);
+    // BUG FIX: Calculate actual last day of the month instead of always using 31
+    const lastDay = new Date(y, m, 0).getDate();
+    const startDate = `${y}-${String(m).padStart(2, '0')}-01`;
+    const endDate   = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const effectiveStart = startDate < DATA_START ? DATA_START : startDate;
+    query.date = { $gte: effectiveStart, $lte: endDate };
+  } else {
+    query.date = { $gte: DATA_START };
+  }
+
+  const attendance = await Attendance.find(query)
+    .sort({ date: -1 })
+    .limit(parseInt(limit))
+    .skip((parseInt(page) - 1) * parseInt(limit));
+
+  const total = await Attendance.countDocuments(query);
+
+  res.json({ success: true, attendance, total, page: parseInt(page) });
+});
+
+// Helper: count working days (Mon-Sat) in a date range, capped at today IST
+const countWorkingDays = (startStr, endStr) => {
+  const DATA_START = '2026-04-01';
+  const effectiveStart = startStr < DATA_START ? DATA_START : startStr;
+
+  const todayIST = (() => {
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffset);
+    return istDate.toISOString().split('T')[0];
+  })();
+  const effectiveEnd = endStr > todayIST ? todayIST : endStr;
+
+  if (effectiveStart > effectiveEnd) return 0;
+
+  let count = 0;
+  const cur = new Date(effectiveStart + 'T00:00:00Z');
+  const end = new Date(effectiveEnd + 'T00:00:00Z');
+
+  while (cur <= end) {
+    const day = cur.getUTCDay();
+    if (day !== 0) count++;
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return count;
+};
+
+// @desc    Get monthly stats for employee
+// @route   GET /api/attendance/stats
+// @access  Private
+const getStats = asyncHandler(async (req, res) => {
+  const { month, year } = req.query;
+  const currentDate = new Date();
+  const targetMonth = parseInt(month) || currentDate.getMonth() + 1;
+  const targetYear  = parseInt(year)  || currentDate.getFullYear();
+
+  // BUG FIX: Use actual last day of month
+  const lastDay = new Date(targetYear, targetMonth, 0).getDate();
+  const startDate = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
+  const endDate   = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  const DATA_START = '2026-04-01';
+  const effectiveStart = startDate < DATA_START ? DATA_START : startDate;
+
+  const records = await Attendance.find({
+    userId: req.user._id,
+    date: { $gte: effectiveStart, $lte: endDate },
+  });
+
+  const present = records.filter((r) => r.status === 'present').length;
+  const late    = records.filter((r) => r.status === 'late').length;
+  const totalDays = present + late;
+  const totalWorkHours = records.reduce((acc, r) => acc + (r.workHours || 0), 0);
+  const avgWorkHours = totalDays > 0 ? (totalWorkHours / totalDays).toFixed(2) : 0;
+
+  const workingDaysElapsed = countWorkingDays(effectiveStart, endDate);
+  const absent = Math.max(0, workingDaysElapsed - totalDays);
+  const attendancePercent = workingDaysElapsed > 0
+    ? Math.round((totalDays / workingDaysElapsed) * 100)
+    : 0;
+
+  // BUG FIX: Streak should skip Sundays (they are holidays, not breaks in streak)
+  const sortedRecords = [...records].sort((a, b) => b.date.localeCompare(a.date));
+  let streak = 0;
+  for (const record of sortedRecords) {
+    const dayOfWeek = new Date(record.date + 'T00:00:00Z').getUTCDay();
+    if (dayOfWeek === 0) continue; // skip Sundays — they don't break the streak
+    if (record.checkInTime) streak++;
+    else break;
+  }
+
+  res.json({
+    success: true,
+    stats: {
+      present,
+      late,
+      absent,
+      totalDays,
+      workingDaysElapsed,
+      attendancePercent,
+      totalWorkHours: parseFloat(totalWorkHours.toFixed(2)),
+      avgWorkHours: parseFloat(avgWorkHours),
+      streak,
+    },
+  });
+});
+
+module.exports = { checkIn, checkOut, getTodayAttendance, getHistory, getStats };
