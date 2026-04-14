@@ -22,6 +22,10 @@ const navItems = [
     to: '/admin/wfh-requests', label: 'WFH',
     icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>,
   },
+  {
+    to: '/admin/leave-requests', label: 'Leaves',
+    icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
+  },
 ];
 
 export default function AdminLayout() {
@@ -39,7 +43,6 @@ export default function AdminLayout() {
             <img src="/icon-192.png" alt="To Fly Media" className="w-full h-full object-cover" />
           </div>
           <div>
-            {/* <p className="font-display font-bold text-white text-sm">To Fly Media</p> */}
             <p className="text-xs text-gray-500">Admin Panel</p>
           </div>
         </div>
@@ -86,16 +89,16 @@ export default function AdminLayout() {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface-card/95 backdrop-blur-xl border-t border-surface-border safe-bottom z-50">
-        <div className="flex justify-around items-center max-w-md mx-auto px-2 py-2">
+        <div className="flex justify-around items-center max-w-md mx-auto px-1 py-2">
           {navItems.map(({ to, label, icon, end }) => (
             <NavLink key={to} to={to} end={end}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-200
+                `flex flex-col items-center gap-1 py-1.5 px-1.5 rounded-xl transition-all duration-200
                  ${isActive ? 'text-brand-500' : 'text-gray-600 hover:text-gray-300'}`
               }
             >
               {icon}
-              <span className="text-[10px] font-semibold tracking-wide">{label}</span>
+              <span className="text-[9px] font-semibold tracking-wide">{label}</span>
             </NavLink>
           ))}
         </div>

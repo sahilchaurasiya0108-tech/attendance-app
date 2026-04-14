@@ -27,6 +27,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/cron', require('./routes/cron'));
 app.use('/api/wfh', require('./routes/wfh'));
+app.use('/api/leave', require('./routes/leave')); // ← Leave requests
 app.use('/api/notifications', require('./routes/notifications'));
 
 // Health check

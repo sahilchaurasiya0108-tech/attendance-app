@@ -6,11 +6,13 @@ import AdminLayout from './layouts/AdminLayout';
 import EmployeeDashboard from './pages/employee/Dashboard';
 import EmployeeHistory from './pages/employee/History';
 import EmployeeProfile from './pages/employee/Profile';
+import EmployeeLeave from './pages/employee/Leave';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminEmployees from './pages/admin/Employees';
 import AdminAttendance from './pages/admin/Attendance';
 import AdminReports from './pages/admin/Reports';
 import WFHRequests from './pages/admin/WFHRequests';
+import AdminLeaveRequests from './pages/admin/LeaveRequests';
 import AdminEmployeeAttendance from './pages/admin/EmployeeAttendance';
 import LoadingScreen from './components/common/LoadingScreen';
 
@@ -38,18 +40,20 @@ export default function App() {
       <Route path="/" element={<PrivateRoute employeeOnly><EmployeeLayout /></PrivateRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<EmployeeDashboard />} />
-        <Route path="history" element={<EmployeeHistory />} />
-        <Route path="profile" element={<EmployeeProfile />} />
+        <Route path="history"   element={<EmployeeHistory />} />
+        <Route path="leave"     element={<EmployeeLeave />} />
+        <Route path="profile"   element={<EmployeeProfile />} />
       </Route>
 
       {/* Admin Routes */}
       <Route path="/admin" element={<PrivateRoute adminOnly><AdminLayout /></PrivateRoute>}>
-        <Route index element={<AdminDashboard />} />
-        <Route path="employees" element={<AdminEmployees />} />
-        <Route path="employees/:id/attendance" element={<AdminEmployeeAttendance />} />
-        <Route path="attendance" element={<AdminAttendance />} />
-        <Route path="reports" element={<AdminReports />} />
-        <Route path="wfh-requests" element={<WFHRequests />} />
+        <Route index                              element={<AdminDashboard />} />
+        <Route path="employees"                   element={<AdminEmployees />} />
+        <Route path="employees/:id/attendance"    element={<AdminEmployeeAttendance />} />
+        <Route path="attendance"                  element={<AdminAttendance />} />
+        <Route path="reports"                     element={<AdminReports />} />
+        <Route path="wfh-requests"                element={<WFHRequests />} />
+        <Route path="leave-requests"              element={<AdminLeaveRequests />} />
       </Route>
 
       <Route path="*" element={<Navigate to={user ? (user.role === 'admin' ? '/admin' : '/dashboard') : '/login'} replace />} />
